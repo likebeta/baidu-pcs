@@ -16,6 +16,7 @@ import httplib
 import base64
 import hashlib
 import mimetypes
+import zlib
 from poster.encode import multipart_encode
 from poster.streaminghttp import StreamingHTTPHandler, StreamingHTTPRedirectHandler, StreamingHTTPSHandler
 
@@ -35,6 +36,8 @@ class BaiduPcs:
 			self.__list()
 		elif self.args.command == 'upload':
 			self.__upload()
+		elif self.args.command == 'rapidupload':
+			self.__rapidupload()
 
 	def __read_tokens(self):
 		with open('pcs_token.json') as f:
@@ -197,6 +200,21 @@ class BaiduPcs:
 			return True
 		else:
 			return False
+	
+	def __rapidupload(self):
+		sz = os.path.getsize(self.args.local_path)
+		if sz <= 256*1024:
+			return False
+
+		baseurl = 'https://pcs.baidu.com/rest/2.0/pcs/file'
+		params = {'method':'rapidupload','access_token':self.access_token,'path':self.args.remote_path,'ondup':'overwrite'}
+		params['content-length'] = sz
+		params['content-md5'] = get_file_md5('',self.args.local_path)
+		params['content-crc32'] = get_file_crc32('',self.args.local_path)
+		params['slice-md5'] = get_md5(params['content-crc32'])
+		url = '%s?%s' % (baseurl,urllib.urlencode(params))
+		print url
+
 
 def to_human_see(bytes_size):
 	bytes_size = bytes_size * 1.0
@@ -234,9 +252,40 @@ def get_file_sha1(pre_data,filename):
 		m.update(data)
 	return m.hexdigest()
 
+def get_md5(data):
+	m = hashlib.md5()
+	m.update(str(data))
+	return m.hexdigest()
+
+def get_file_md5(pre_data,filename):
+	m = hashlib.md5()
+	f = open(filename)
+	is_first = True
+	while True:
+		data = f.read(10240)
+		if not data:
+			break
+		if is_first:
+			is_first = False
+			m.update(pre_data)
+		m.update(data)
+	return m.hexdigest()
+
+def get_file_crc32(pre_data,filename):
+	f = open(filename)
+	is_first = True
+	while True:
+		data = f.read(10240)
+		if not data:
+			break
+		if is_first:
+			is_first = False
+			crc = zlib.crc32(pre_data,0)
+		crc = zlib.crc32(data,crc)
+	return crc & 0xffffffff
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser(version='1.0',description='It is a command-line tool to operate ubuntu one')
+	parser = argparse.ArgumentParser(version='1.0',description='It is a command-line tool to operate baidu pcs')
 	subparsers = parser.add_subparsers(title='sub-commands',dest='command')
 
 	# auth
@@ -250,17 +299,22 @@ if __name__ == '__main__':
 	list_parser.add_argument('dir_path',metavar='dir_path',help='directory to list')
 
 	# download
-	download_parser = subparsers.add_parser('download',help='download file from ubuntu one and output to screen')
+	download_parser = subparsers.add_parser('download',help='download file from baidu pcs and output to screen')
 	download_parser.add_argument('remote_path',metavar='remote_path',help='which to download')
 	download_parser.add_argument('-g','--get',dest='get',action='store_true',help='get download url,not download')
 
 	# upload
-	upload_parser = subparsers.add_parser('upload',help='upload file to ubuntu one')
+	upload_parser = subparsers.add_parser('upload',help='upload file to baidu pcs')
 	upload_parser.add_argument('remote_path',metavar='remote_path',help='which to save')
 	upload_parser.add_argument('local_path',metavar='local_path',help='which to upload')
 
+	# rapidupload
+	rapidupload_parser = subparsers.add_parser('rapidupload',help='rapid upload file to baidu pcs')
+	rapidupload_parser.add_argument('remote_path',metavar='remote_path',help='which to save')
+	rapidupload_parser.add_argument('local_path',metavar='local_path',help='which to upload')
+
 	# delete
-	delete_parser = subparsers.add_parser('delete',help='delete file from ubuntu one')
+	delete_parser = subparsers.add_parser('delete',help='delete file from baidu pcs')
 	delete_parser.add_argument('remote',metavar='remote_path',help='which remote file or directory to delete')
 
 	# mkdir
