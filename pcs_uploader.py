@@ -182,6 +182,9 @@ class BaiduPcs:
 		return True
 
 	def __upload(self):
+		if self.__rapidupload():
+			return True
+
 		baseurl = 'https://c.pcs.baidu.com/rest/2.0/pcs/file'
 		params = {'method':'upload','access_token':self.access_token,'path':self.args.remote_path,'ondup':'overwrite'}
 		url = '%s?%s' % (baseurl,urllib.urlencode(params))
@@ -211,10 +214,16 @@ class BaiduPcs:
 		params['content-length'] = sz
 		params['content-md5'] = get_file_md5('',self.args.local_path)
 		params['content-crc32'] = get_file_crc32('',self.args.local_path)
-		params['slice-md5'] = get_md5(params['content-crc32'])
+		with open(self.args.local_path) as f:
+			d = f.read(256*1024)
+			params['slice-md5'] = get_md5(d)
 		url = '%s?%s' % (baseurl,urllib.urlencode(params))
-		print url
-
+		data = self.__post(url,'',{})
+		j = json.loads(data)
+		if 'fs_id' in j:
+			return True
+		else:
+			return False
 
 def to_human_see(bytes_size):
 	bytes_size = bytes_size * 1.0
